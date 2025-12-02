@@ -149,6 +149,13 @@
     // Opened gate base: [-0.09, 0.03, -0.92]
     // We add a small random noise, then normalize to ~1g and optionally scale a tiny bit to simulate sensor variance.
     function generateAcceleration() {
+      const closedBase = [-0.03, 0.99, 0.05];
+      const openBase = [-0.09, 0.03, -0.92];
+
+      // Choose state randomly (50/50)
+      const state = Math.random() < 0.5 ? 'closed' : 'opened';
+      const base = state === 'closed' ? closedBase : openBase;
+
       // Add small noise (±0.03) to each axis
       const noiseAmplitude = 0.03;
       let vec = [
