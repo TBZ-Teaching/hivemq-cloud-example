@@ -1,0 +1,16 @@
+{
+  "name": "hivemq-mqtt-publisher",
+  "version": "1.0.0",
+  "description": "MQTT publisher that periodically sends fake sensor values to a HiveMQ Cloud instance",
+  "main": "mqtt_publisher.js",
+  "scripts": {
+    "start": "node mqtt_publisher.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "mqtt": "^4.3.7"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
