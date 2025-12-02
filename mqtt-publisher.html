@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MQTT Regular Publisher Demo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .status-connected {
+      color: green;
+      font-weight: bold;
+    }
+    .status-disconnected {
+      color: red;
+      font-weight: bold;
+    }
+    .status-connecting {
+      color: orange;
+      font-weight: bold;
+    }
+    .config-section {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+    .config-section label {
+      display: block;
+      margin-bottom: 5px;
+    }
+    .config-section input {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 10px 20px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+    .message-log {
+      background: #f9f9f9;
+      padding: 10px;
+      border: 1px solid #ddd;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 10px;
+    }
+    .message-log p {
+      margin: 5px 0;
+      font-family: monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>MQTT Regular Publisher</h1>
+  
+  <div class="config-section">
+    <h3>HiveMQ Cloud Configuration</h3>
+    <label for="broker">Broker URL (e.g., your-cluster.hivemq.cloud):</label>
+    <input type="text" id="broker" placeholder="your-cluster.s1.eu.hivemq.cloud" />
+    
+    <label for="port">WebSocket Port:</label>
+    <input type="number" id="port" value="8884" min="1" max="65535" />
+    
+    <label for="username">Username:</label>
+    <input type="text" id="username" placeholder="your-username" />
+    
+    <label for="password">Password:</label>
+    <input type="password" id="password" placeholder="your-password" />
+    
+    <label for="topic">Topic:</label>
+    <input type="text" id="topic" value="test/topic" />
+    
+    <label for="interval">Publish Interval (seconds):</label>
+    <input type="number" id="interval" value="5" min="1" />
+  </div>
+
+  <p>Status: <span id="status" class="status-disconnected">Disconnected</span></p>
+  <p>Messages sent: <span id="messageCount">0</span></p>
+  <p>Last message: <span id="lastMessage">–</span></p>
+
+  <button id="connectBtn">Connect</button>
+  <button id="disconnectBtn" disabled>Disconnect</button>
+
+  <h3>Message Log</h3>
+  <div class="message-log" id="messageLog">
+    <p><em>No messages yet...</em></p>
+  </div>
+
+  <!-- MQTT.js from CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    // Global variables
+    let client = null;
+    let publishInterval = null;
+    let messageCount = 0;
+
+    // DOM elements
+    const statusEl = document.getElementById('status');
+    const lastMessageEl = document.getElementById('lastMessage');
+    const messageCountEl = document.getElementById('messageCount');
+    const messageLogEl = document.getElementById('messageLog');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+
+    // Update status display
+    function updateStatus(status, className) {
+      statusEl.textContent = status;
+      statusEl.className = className;
+    }
+
+    // Add message to log
+    function addToLog(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      const p = document.createElement('p');
+      p.textContent = `[${timestamp}] ${message}`;
+      
+      // Remove "No messages yet" placeholder if present
+      if (messageLogEl.querySelector('em')) {
+        messageLogEl.innerHTML = '';
+      }
+      
+      messageLogEl.appendChild(p);
+      messageLogEl.scrollTop = messageLogEl.scrollHeight;
+    }
+
+    // Generate sample data to publish
+    function generatePayload() {
+      return JSON.stringify({
+        timestamp: new Date().toISOString(),
+        temperature: (20 + Math.random() * 10).toFixed(2),
+        humidity: (40 + Math.random() * 30).toFixed(2),
+        messageId: messageCount + 1
+      });
+    }
+
+    // Connect to MQTT broker
+    function connect() {
+      const broker = document.getElementById('broker').value.trim();
+      const port = document.getElementById('port').value.trim();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const topic = document.getElementById('topic').value.trim();
+      const interval = parseInt(document.getElementById('interval').value, 10) * 1000;
+
+      if (!broker || !username || !password) {
+        alert('Please fill in broker URL, username, and password');
+        return;
+      }
+
+      if (!topic) {
+        alert('Please fill in the topic');
+        return;
+      }
+
+      if (isNaN(interval) || interval < 1000) {
+        alert('Please enter a valid publish interval (minimum 1 second)');
+        return;
+      }
+
+      updateStatus('Connecting…', 'status-connecting');
+      addToLog('Attempting to connect...');
+
+      // Connect using WebSocket Secure (wss)
+      const url = `wss://${broker}:${port}/mqtt`;
+      
+      client = mqtt.connect(url, {
+        username: username,
+        password: password,
+        protocol: 'wss',
+        reconnectPeriod: 1000,
+        connectTimeout: 30 * 1000,
+      });
+
+      client.on('connect', function() {
+        updateStatus('Connected', 'status-connected');
+        addToLog('Successfully connected to HiveMQ Cloud!');
+        
+        connectBtn.disabled = true;
+        disconnectBtn.disabled = false;
+
+        // Start publishing regularly
+        publishInterval = setInterval(function() {
+          const payload = generatePayload();
+          client.publish(topic, payload, { qos: 1 }, function(err) {
+            if (err) {
+              addToLog(`Error publishing: ${err.message}`);
+            } else {
+              messageCount++;
+              messageCountEl.textContent = messageCount;
+              lastMessageEl.textContent = payload;
+              addToLog(`Published to ${topic}: ${payload}`);
+            }
+          });
+        }, interval);
+        
+        addToLog(`Started publishing every ${interval / 1000} seconds to topic: ${topic}`);
+      });
+
+      client.on('error', function(err) {
+        addToLog(`Connection error: ${err.message}`);
+        updateStatus('Error', 'status-disconnected');
+      });
+
+      client.on('close', function() {
+        addToLog('Connection closed');
+        updateStatus('Disconnected', 'status-disconnected');
+        stopPublishing();
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+      });
+
+      client.on('reconnect', function() {
+        updateStatus('Reconnecting…', 'status-connecting');
+        addToLog('Attempting to reconnect...');
+      });
+
+      client.on('offline', function() {
+        addToLog('Client went offline');
+        updateStatus('Offline', 'status-disconnected');
+      });
+    }
+
+    // Stop publishing
+    function stopPublishing() {
+      if (publishInterval) {
+        clearInterval(publishInterval);
+        publishInterval = null;
+        addToLog('Stopped publishing');
+      }
+    }
+
+    // Disconnect from MQTT broker
+    function disconnect() {
+      stopPublishing();
+      connectBtn.disabled = false;
+      disconnectBtn.disabled = true;
+      if (client) {
+        client.end(true, function() {
+          addToLog('Disconnected from broker');
+          updateStatus('Disconnected', 'status-disconnected');
+          client = null;
+        });
+      } else {
+        updateStatus('Disconnected', 'status-disconnected');
+      }
+    }
+
+    // Event listeners
+    connectBtn.addEventListener('click', connect);
+    disconnectBtn.addEventListener('click', disconnect);
+  </script>
+</body>
+</html>
