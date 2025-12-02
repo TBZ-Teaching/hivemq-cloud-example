@@ -132,12 +132,54 @@
       messageLogEl.scrollTop = messageLogEl.scrollHeight;
     }
 
-    // Generate sample data to publish
+    // Helper: random number in range [-r, r)
+    function randRange(r) {
+      return (Math.random() * 2 - 1) * r;
+    }
+
+    // Helper: normalize vector to length 1
+    function normalize(vec) {
+      const len = Math.sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
+      if (len === 0) return vec;
+      return [vec[0]/len, vec[1]/len, vec[2]/len];
+    }
+
+    // Generate acceleration vector (x,y,z) around closed or opened gate bases.
+    // Closed gate base: [-0.03, 0.99, 0.05]
+    // Opened gate base: [-0.09, 0.03, -0.92]
+    // We add a small random noise, then normalize to ~1g and optionally scale a tiny bit to simulate sensor variance.
+    function generateAcceleration() {
+      // Add small noise (±0.03) to each axis
+      const noiseAmplitude = 0.03;
+      let vec = [
+        base[0] + randRange(noiseAmplitude),
+        base[1] + randRange(noiseAmplitude),
+        base[2] + randRange(noiseAmplitude)
+      ];
+
+      // Normalize to unit vector (simulate resulting gravitational acceleration direction)
+      vec = normalize(vec);
+
+      // Simulate small variation in measured g (±2%)
+      const gVariation = 1 + randRange(0.02);
+      vec = vec.map(v => v * gVariation);
+
+      // Round to 2 decimal places for CSV representation
+      const xStr = vec[0].toFixed(2);
+      const yStr = vec[1].toFixed(2);
+      const zStr = vec[2].toFixed(2);
+
+      return { 
+        csv: `${xStr},${yStr},${zStr}`
+      };
+    }
+
+    // Generate sample payload to publish (now contains acceleration vector in CSV and components)
     function generatePayload() {
+      const accel = generateAcceleration();
       return JSON.stringify({
         timestamp: new Date().toISOString(),
-        temperature: (20 + Math.random() * 10).toFixed(2),
-        humidity: (40 + Math.random() * 30).toFixed(2),
+        acceleration: accel.csv,          // CSV string like "-0.03,0.99,0.05"      // "closed" or "opened"
         messageId: messageCount + 1
       });
     }
