@@ -14,6 +14,58 @@ const CLIENT_ID = process.env.MQTT_CLIENT_ID || `mqtt_publisher_faas2_js_${Math.
 
 let garageIsOpen = false;
 let client = null;
+let lastPublishedState = null;
+let stateChangeCounter = 0;
+
+// Acceleration thresholds for state detection
+const CLOSED_THRESHOLD = 0.5;  // Z-axis should be close to 1.0 (gravity pointing up)
+const OPEN_THRESHOLD = -0.5;   // Z-axis should be close to -1.0 (gravity pointing down)
+
+/**
+ * Analyzes 3-axis acceleration values to determine door state
+ * Geschlossenes Tor: Z-axis ≈ 0.99 (sensor horizontal, gravity up)
+ * Geöffnetes Tor: Z-axis ≈ -0.92 (sensor rotated, gravity down)
+ */
+function detectDoorState(x, y, z) {
+  // The Z-axis acceleration indicates door orientation
+  // Positive Z (close to 1.0) = door closed
+  // Negative Z (close to -1.0) = door open
+  
+  if (z > CLOSED_THRESHOLD) {
+    return 'closed';
+  } else if (z < OPEN_THRESHOLD) {
+    return 'open';
+  }
+  
+  // Uncertain state - return last known state or null
+  return lastPublishedState;
+}
+
+/**
+ * Generates realistic acceleration values based on door state
+ */
+function generateAccelerationValues(state) {
+  // Add small random fluctuations to simulate real sensor noise
+  const noise = () => (Math.random() - 0.5) * 0.05;
+  
+  if (state === 'closed') {
+    // Door closed: X ≈ -0.03, Y ≈ 0.99, Z ≈ 0.05
+    return {
+      x: -0.03 + noise(),
+      y: 0.99 + noise(),
+      z: 0.05 + noise()
+    };
+  } else if (state === 'open') {
+    // Door open: X ≈ -0.09, Y ≈ 0.03, Z ≈ -0.92
+    return {
+      x: -0.09 + noise(),
+      y: 0.03 + noise(),
+      z: -0.92 + noise()
+    };
+  }
+  
+  return null;
+}
 
 function createClient() {
   const url = `mqtts://${HIVE_MQ_HOST}:${HIVE_MQ_PORT}`;
@@ -50,16 +102,35 @@ function sendFakeGarageDoorState() {
     return;
   }
 
-  const payload = garageIsOpen ? '-0.03,0.0,-0.85' : '-0.03,0.99,0.05';
-  client.publish(GARAGE_DOOR_TOPIC, payload, { qos: 0 }, (err) => {
+  // Generate realistic acceleration data
+  const currentState = stateChangeCounter < 3 ? 'closed' : 'open';
+  const accelData = generateAccelerationValues(currentState);
+  
+  if (!accelData) {
+    console.log('No valid acceleration data generated');
+    return;
+  }
+
+  // Format payload as comma-separated values (x,y,z)
+  const payload = `${accelData.x.toFixed(2)},${accelData.y.toFixed(2)},${accelData.z.toFixed(2)}`;
+  
+  // Detect state from acceleration values
+  const detectedState = detectDoorState(accelData.x, accelData.y, accelData.z);
+  
+  // Publish every time
+  client.publish(GARAGE_DOOR_TOPIC, payload, { qos: 1 }, (err) => {
     if (err) {
       console.error('Publish error:', err.message);
     } else {
-      console.log(`Published to ${GARAGE_DOOR_TOPIC}: ${payload}`);
+      console.log(`[${new Date().toISOString()}] Published to ${GARAGE_DOOR_TOPIC}: ${payload} (${detectedState})`);
     }
   });
 
-  garageIsOpen = !garageIsOpen;
+  // Change state every 6 readings (every 30 seconds with 5s interval)
+  stateChangeCounter++;
+  if (stateChangeCounter >= 6) {
+    stateChangeCounter = 0;
+  }
 }
 
 // Start
