@@ -18,27 +18,25 @@ let lastPublishedState = null;
 let stateChangeCounter = 0;
 
 // Acceleration thresholds for state detection
-const CLOSED_THRESHOLD = 0.5;  // Z-axis should be close to 1.0 (gravity pointing up)
-const OPEN_THRESHOLD = -0.5;   // Z-axis should be close to -1.0 (gravity pointing down)
+const CLOSED_Y_THRESHOLD = 0.85;   // Y-axis >= 0.85 = door closed
+const OPEN_Z_THRESHOLD = -0.85;    // Z-axis <= -0.85 = door open
+                                    // Otherwise = not defined
 
 /**
  * Analyzes 3-axis acceleration values to determine door state
- * Geschlossenes Tor: Z-axis ≈ 0.99 (sensor horizontal, gravity up)
- * Geöffnetes Tor: Z-axis ≈ -0.92 (sensor rotated, gravity down)
+ * Geschlossenes Tor: y >= 0.85
+ * Geöffnetes Tor: z <= -0.85
+ * Undefined: all other cases
  */
 function detectDoorState(x, y, z) {
-  // The Z-axis acceleration indicates door orientation
-  // Positive Z (close to 1.0) = door closed
-  // Negative Z (close to -1.0) = door open
-  
-  if (z > CLOSED_THRESHOLD) {
+  if (y >= CLOSED_Y_THRESHOLD) {
     return 'closed';
-  } else if (z < OPEN_THRESHOLD) {
+  } else if (z <= OPEN_Z_THRESHOLD) {
     return 'open';
   }
   
-  // Uncertain state - return last known state or null
-  return lastPublishedState;
+  // Not defined/uncertain state
+  return null;
 }
 
 /**
@@ -61,6 +59,13 @@ function generateAccelerationValues(state) {
       x: -0.09 + noise(),
       y: 0.03 + noise(),
       z: -0.92 + noise()
+    };
+  } else if (state === 'uncertain') {
+    // Uncertain state: y < 0.85 AND z > -0.85 (door in transition/intermediate position)
+    return {
+      x: (Math.random() - 0.5) * 0.2,
+      y: (Math.random() - 0.5) * 0.85,  // y < 0.85
+      z: (Math.random() - 0.5) * 0.8   // z between -0.4 and 0.4 (> -0.85)
     };
   }
   
@@ -102,8 +107,19 @@ function sendFakeGarageDoorState() {
     return;
   }
 
-  // Generate realistic acceleration data
-  const currentState = stateChangeCounter < 3 ? 'closed' : 'open';
+  // Determine current state: closed (0-2), open (3-5), uncertain (randomly 1 in 10)
+  let currentState;
+  const randomCheck = Math.random();
+  
+  if (randomCheck < 0.1) {
+    // 10% chance of uncertain state
+    currentState = 'uncertain';
+  } else if (stateChangeCounter < 3) {
+    currentState = 'closed';
+  } else {
+    currentState = 'open';
+  }
+  
   const accelData = generateAccelerationValues(currentState);
   
   if (!accelData) {
@@ -122,7 +138,7 @@ function sendFakeGarageDoorState() {
     if (err) {
       console.error('Publish error:', err.message);
     } else {
-      console.log(`[${new Date().toISOString()}] Published to ${GARAGE_DOOR_TOPIC}: ${payload} (${detectedState})`);
+      console.log(`[${new Date().toISOString()}] Published to ${GARAGE_DOOR_TOPIC}: ${payload} (${detectedState || 'None'})`);
     }
   });
 
